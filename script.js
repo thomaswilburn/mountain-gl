@@ -24,7 +24,7 @@ gl.shaderSource(fragment, `
 precision mediump float;
 
 void main() {
-  gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0);
+  gl_FragColor = vec4(1.0, 0.5, 0.0, 1.0);
 }
 `);
 gl.compileShader(fragment);
@@ -42,6 +42,8 @@ var triangles = [
   1.0, -1.0, 0.0
 ];
 
+var index = [0, 1, 2];
+
 var a_position = gl.getAttribLocation(program, "a_position");
 gl.enableVertexAttribArray(program, a_position);
 
@@ -49,28 +51,35 @@ var positionBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(triangles), gl.STATIC_DRAW);
 
+var indexBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(index), gl.STATIC_DRAW);
 
 var cameraCoords = [10, 10, -10];
 var target = [0, 0, 0];
 var up = [0, 1, 0];
 
-
 var perspective = mat4.create();
 mat4.identity(perspective);
 mat4.perspective(perspective, 45 * Math.PI / 180, canvas.width / canvas.height, .1, 100);
-console.log(perspective);
 var u_perspective = gl.getUniformLocation(program, "u_perspective");
 
 var u_matrix = gl.getUniformLocation(program, "u_matrix");
 
 var render = function(time) {
   time *= 0.001;
+  
+  cameraCoords = [
+    Math.sin(time) * 10,
+    10,
+    Math.cos(time) * 10
+  ]
+  
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   
   var matrix = mat4.create();
-  mat4.identity(matrix);
-  mat4.translate(matrix, matrix, [-1.5, 0, -7]);
+  mat4.lookAt(matrix, cameraCoords, target, up);
   
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
   gl.vertexAttribPointer(a_position, 3, gl.FLOAT, false, 0, 0);
@@ -78,9 +87,31 @@ var render = function(time) {
   gl.uniformMatrix4fv(u_perspective, false, perspective);
   gl.uniformMatrix4fv(u_matrix, false, matrix);
   
-  gl.drawArrays(gl.TRIANGLES, 0, triangles.length / 3);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
   
-  // requestAnimationFrame(render);
+  gl.drawElements(gl.TRIANGLES, index.length, gl.UNSIGNED_SHORT, 0);
+  // gl.drawArrays(gl.TRIANGLES, 0, triangles.length / 3);
+  
+  requestAnimationFrame(render);
 };
 
 requestAnimationFrame(render);
+
+// var noise = new Image();
+// noise.src = "noise.png";
+// noise.onload = function() {
+//   var heightmap = document.createElement("canvas");
+//   var context = heightmap.getContext("2d");
+//   heightmap.width = noise.width;
+//   heightmap.height = noise.height;
+//   context.drawImage(noise, 0, 0, noise.width, noise.height);
+//   var imageData = context.getImageData(0, 0, noise.width, noise.height);
+//   var getHeight = (x, y) => imageData.data[(x + y * noise.width) * 4];
+  
+//   //generate triangles
+//   for (y = 0; y < 100; y++) {
+//     for (x = 0; x < 100; x++) {
+      
+//     }
+//   };
+// }
