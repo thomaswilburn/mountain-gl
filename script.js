@@ -12,9 +12,13 @@ gl.shaderSource(vertex, `
 attribute vec3 a_position;
 uniform mat4 u_perspective;
 uniform mat4 u_matrix;
+varying vec4 v_screenspace;
+varying vec3 v_position;
 
 void main() {
-  gl_Position = u_perspective * u_matrix * vec4(a_position, 1.0);
+  v_position = a_position;
+  v_screenspace = u_perspective * u_matrix * vec4(a_position, 1.0);
+  gl_Position = v_screenspace;
 }
 `);
 gl.compileShader(vertex);
@@ -23,8 +27,11 @@ var fragment = gl.createShader(gl.FRAGMENT_SHADER);
 gl.shaderSource(fragment, `
 precision mediump float;
 
+varying vec4 v_screenspace;
+varying vec3 v_position;
+
 void main() {
-  gl_FragColor = vec4(1.0, 0.5, 0.0, 1.0);
+  gl_FragColor = vec4(v_position.yyy / 20.0, 1.0);
 }
 `);
 gl.compileShader(fragment);
@@ -36,7 +43,7 @@ gl.linkProgram(program);
 
 gl.useProgram(program);
 
-var triangles = [
+var verts = [
   0.0, 1.0, 0.0,
   -1.0, -1.0, 0.0,
   1.0, -1.0, 0.0
@@ -48,20 +55,20 @@ var a_position = gl.getAttribLocation(program, "a_position");
 gl.enableVertexAttribArray(program, a_position);
 
 var positionBuffer = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(triangles), gl.STATIC_DRAW);
+// gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+// gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
 
 var indexBuffer = gl.createBuffer();
-gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(index), gl.STATIC_DRAW);
+// gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+// gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(index), gl.STATIC_DRAW);
 
-var cameraCoords = [10, 10, -10];
+var cameraCoords = [10, 3, -10];
 var target = [0, 0, 0];
 var up = [0, 1, 0];
 
 var perspective = mat4.create();
 mat4.identity(perspective);
-mat4.perspective(perspective, 45 * Math.PI / 180, canvas.width / canvas.height, .1, 100);
+mat4.perspective(perspective, 45 * Math.PI / 180, canvas.width / canvas.height, .1, 300);
 var u_perspective = gl.getUniformLocation(program, "u_perspective");
 
 var u_matrix = gl.getUniformLocation(program, "u_matrix");
@@ -69,10 +76,12 @@ var u_matrix = gl.getUniformLocation(program, "u_matrix");
 var render = function(time) {
   time *= 0.001;
   
+  var distance = 10;
+  
   cameraCoords = [
-    Math.sin(time) * 10,
-    10,
-    Math.cos(time) * 10
+    Math.sin(time) * distance,
+    5,
+    Math.cos(time) * distance
   ]
   
   gl.viewport(0, 0, canvas.width, canvas.height);
@@ -90,28 +99,61 @@ var render = function(time) {
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
   
   gl.drawElements(gl.TRIANGLES, index.length, gl.UNSIGNED_SHORT, 0);
-  // gl.drawArrays(gl.TRIANGLES, 0, triangles.length / 3);
+  // gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
   
   requestAnimationFrame(render);
 };
 
-requestAnimationFrame(render);
+// requestAnimationFrame(render);
 
-// var noise = new Image();
-// noise.src = "noise.png";
-// noise.onload = function() {
-//   var heightmap = document.createElement("canvas");
-//   var context = heightmap.getContext("2d");
-//   heightmap.width = noise.width;
-//   heightmap.height = noise.height;
-//   context.drawImage(noise, 0, 0, noise.width, noise.height);
-//   var imageData = context.getImageData(0, 0, noise.width, noise.height);
-//   var getHeight = (x, y) => imageData.data[(x + y * noise.width) * 4];
+var noise = new Image();
+noise.src = "noise.png";
+noise.onload = function() {
+  var heightmap = document.createElement("canvas");
+  var context = heightmap.getContext("2d");
+  heightmap.width = noise.width;
+  heightmap.height = noise.height;
+  context.drawImage(noise, 0, 0, noise.width, noise.height);
+  var imageData = context.getImageData(0, 0, noise.width, noise.height);
+  var clamp = v => v < 0 ? 0 : v > 1 ? 1 : v;
+  var getPixel = (x, y) => imageData.data[(x + y * noise.width) * 4];
+  var getHeight = (x, z) => clamp((getPixel(x, z) - 96) / (255 - 96)) * 20;
+  // var getHeight = () => Math.random() * 3;
   
-//   //generate triangles
-//   for (y = 0; y < 100; y++) {
-//     for (x = 0; x < 100; x++) {
-      
-//     }
-//   };
-// }
+  //create the plane
+  var interval = 10;
+  var size = 10;
+  verts = new Array(interval ** 2);
+  
+  //generate points
+  for (z = 0; z < interval; z++) {
+    for (x = 0; x < interval; x++) {
+      var i = ((z * interval + x) * 3);
+      var height = getHeight(x, z);
+      verts[i] = x - (interval / 2);
+      verts[i+1] = height;
+      verts[i+2] = z - (interval / 2);
+    }
+  }
+  
+  //generate index list
+  var squares = size - 1;
+  index = new Array(squares ** 2 * 6);
+  for (var i = 0; i < squares ** 2; i++) {
+    var j = i * 6;
+    index[j] = i;
+    index[j+1] = i + 1;
+    index[j+2] = i + size;
+    index[j+3] = i + 1;
+    index[j+4] = i + size;
+    index[j+5] = i + size + 1;
+  }
+  
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+  
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(index), gl.STATIC_DRAW);
+  
+  requestAnimationFrame(render);
+}
