@@ -32,7 +32,7 @@ varying vec4 v_screenspace;
 varying vec3 v_position;
 
 void main() {
-  gl_FragColor = vec4(v_position.yyy / 20.0, 1.0);
+  gl_FragColor = vec4(v_position.yyy / 2.0, 1.0);
 }
 `);
 gl.compileShader(fragment);
@@ -116,10 +116,11 @@ noise.onload = function() {
   heightmap.height = noise.height;
   context.drawImage(noise, 0, 0, noise.width, noise.height);
   var imageData = context.getImageData(0, 0, noise.width, noise.height);
-  var clamp = v => v < 0 ? 0 : v > 1 ? 1 : v;
-  var getPixel = (x, y) => imageData.data[(x + y * noise.width) * 4];
-  var getHeight = (x, z) => clamp((getPixel(x, z) - 96) / (255 - 96)) * 10;
-  // var getHeight = () => Math.random() * 3;
+  var getHeight = function(x, y) {
+    x = Math.floor(x * noise.width);
+    y = Math.floor(y * noise.height);
+    return imageData.data[(y * noise.height + x) * 4] / 255;
+  }
   
   //create the plane
   var interval = 100;
@@ -130,7 +131,7 @@ noise.onload = function() {
   for (x = 0; x < interval; x++) {
     for (z = 0; z < interval; z++) {
       var i = ((x * interval + z) * 3);
-      var height = getHeight(x, z);
+      var height = getHeight(x / (interval - 1), z / (interval - 1)) * 2;
       verts[i] = x / (interval - 1) * size - (size / 2);
       verts[i+1] = height;
       verts[i+2] = z / (interval - 1) * size - (size / 2);
