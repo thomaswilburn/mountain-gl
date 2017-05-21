@@ -4,6 +4,7 @@ canvas.height = canvas.offsetHeight;
 var gl = canvas.getContext("webgl");
 
 gl.enable(gl.DEPTH_TEST);
+// gl.enable(gl.CULL_FACE);
 gl.clearColor(0, 0, 1, 1);
 gl.clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT);
 
@@ -117,36 +118,39 @@ noise.onload = function() {
   var imageData = context.getImageData(0, 0, noise.width, noise.height);
   var clamp = v => v < 0 ? 0 : v > 1 ? 1 : v;
   var getPixel = (x, y) => imageData.data[(x + y * noise.width) * 4];
-  var getHeight = (x, z) => clamp((getPixel(x, z) - 96) / (255 - 96)) * 20;
+  var getHeight = (x, z) => clamp((getPixel(x, z) - 96) / (255 - 96)) * 10;
   // var getHeight = () => Math.random() * 3;
   
   //create the plane
-  var interval = 10;
+  var interval = 100;
   var size = 10;
   verts = new Array(interval ** 2);
   
   //generate points
-  for (z = 0; z < interval; z++) {
-    for (x = 0; x < interval; x++) {
-      var i = ((z * interval + x) * 3);
+  for (x = 0; x < interval; x++) {
+    for (z = 0; z < interval; z++) {
+      var i = ((x * interval + z) * 3);
       var height = getHeight(x, z);
-      verts[i] = x - (interval / 2);
+      verts[i] = x / (interval - 1) * size - (size / 2);
       verts[i+1] = height;
-      verts[i+2] = z - (interval / 2);
+      verts[i+2] = z / (interval - 1) * size - (size / 2);
     }
   }
   
   //generate index list
-  var squares = size - 1;
-  index = new Array(squares ** 2 * 6);
-  for (var i = 0; i < squares ** 2; i++) {
-    var j = i * 6;
-    index[j] = i;
-    index[j+1] = i + 1;
-    index[j+2] = i + size;
-    index[j+3] = i + 1;
-    index[j+4] = i + size;
-    index[j+5] = i + size + 1;
+  var edges = interval - 1;
+  index = new Array((edges ** 2) * 6);
+  for (var i = 0; i < edges; i++) {
+    for (var j = 0; j < edges; j++) {
+      var k = (i * edges + j) * 6;
+      var corner = i * interval + j;
+      index[k] = corner;
+      index[k+1] = corner + 1;
+      index[k+2] = corner + interval;
+      index[k+3] = corner + 1;
+      index[k+4] = corner + interval + 1;
+      index[k+5] = corner + interval;
+    }
   }
   
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
