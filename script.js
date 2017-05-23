@@ -4,7 +4,7 @@ canvas.height = canvas.offsetHeight;
 var gl = canvas.getContext("webgl");
 
 gl.enable(gl.DEPTH_TEST);
-// gl.enable(gl.CULL_FACE);
+gl.enable(gl.CULL_FACE);
 // gl.clearColor(1.0, .5, 0, 1);
 gl.clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT);
 
@@ -25,7 +25,7 @@ varying vec3 v_normal;
 void main() {
   v_position = a_position;
   v_color = a_color;
-  v_normal = a_normal;
+  v_normal = normalize(a_normal);
   v_screenspace = u_perspective * u_matrix * vec4(a_position, 1.0);
   gl_Position = v_screenspace;
 }
@@ -34,26 +34,33 @@ gl.compileShader(vertex);
 
 var fragment = gl.createShader(gl.FRAGMENT_SHADER);
 gl.shaderSource(fragment, `
-precision mediump float;
+precision highp float;
 
 uniform vec3 u_light;
+uniform float u_time;
 
 varying vec4 v_screenspace;
 varying vec3 v_position;
 varying vec3 v_color;
 varying vec3 v_normal;
 
+float noise(vec2 seed) {
+  float result = fract(sin(dot(seed.xy ,vec2(12.9898,78.233))) * 43758.5453);
+  return result;
+}
+
 void main() {
   float shade = v_position.y / 4.0;
-  float fog = 1.4 - v_screenspace.z * 0.05;
+  float fog = 1.4 - v_screenspace.z * 0.01;
   vec3 normal = normalize(v_normal);
   vec3 light = normalize(u_light);
   float lighting = max(dot(normal, light), 0.0);
-  vec3 color = v_color * shade * lighting * fog;
+  vec3 color = v_color * shade * lighting * fog * (noise(v_screenspace.xy) * 0.2 + 0.8);
   gl_FragColor = vec4(color, 1.0);
 }
 `);
 gl.compileShader(fragment);
+// console.log(gl.getShaderInfoLog(fragment));
 
 var program = gl.createProgram();
 gl.attachShader(program, vertex);
@@ -74,12 +81,14 @@ var scene = {
       color: gl.createBuffer(),
       normals: gl.createBuffer()
     }
-  }
+  },
 }
 
-var a_position = gl.getAttribLocation(program, "a_position");
-var a_color = gl.getAttribLocation(program, "a_color");
-var a_normal = gl.getAttribLocation(program, "a_normal");
+program.attribs = {
+  a_position: gl.getAttribLocation(program, "a_position"),
+  a_color: gl.getAttribLocation(program, "a_color"),
+  a_normal: gl.getAttribLocation(program, "a_normal")
+}
 
 var camera = {
   position: [0, 0, 0],
@@ -90,14 +99,19 @@ var camera = {
 
 mat4.identity(camera.perspective);
 mat4.perspective(camera.perspective, 45 * Math.PI / 180, canvas.width / canvas.height, .1, 300);
-var u_perspective = gl.getUniformLocation(program, "u_perspective");
 
-var u_matrix = gl.getUniformLocation(program, "u_matrix");
-var u_light = gl.getUniformLocation(program, "u_light");
+program.uniforms = {
+  u_perspective: gl.getUniformLocation(program, "u_perspective"),
+  u_matrix: gl.getUniformLocation(program, "u_matrix"),
+  u_light: gl.getUniformLocation(program, "u_light"),
+  u_time: gl.getUniformLocation(program, "u_time")
+};
 
 var render = function(time) {
   time *= 0.001;
   
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   
@@ -105,14 +119,14 @@ var render = function(time) {
   
   camera.position = [
     Math.sin(time * .2) * distance,
-    Math.sin(time * .1) * 1 + 3,
+    10,
     Math.cos(time * .2) * distance
   ];
   
   camera.target = [
-    Math.sin(time) * 5,
-    Math.abs(Math.cos(time * .3) * 2),
-    Math.sin(time) * 5
+    Math.sin(time * .1) * 5,
+    4,
+    Math.sin(time * .1) * 5
   ]
   
   var light = [
@@ -121,29 +135,28 @@ var render = function(time) {
     0
   ];
   
+  gl.uniform3fv(program.uniforms.u_light, light);
+  gl.uniform1f(program.uniforms.u_time, time);
   
-  gl.uniform3fv(u_light, light);
+  gl.enableVertexAttribArray(program.attribs.a_position);
+  gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.position);
+  gl.vertexAttribPointer(program.attribs.a_position, 3, gl.FLOAT, false, 0, 0);
+  
+  gl.enableVertexAttribArray(program.attribs.a_color);
+  gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.color);
+  gl.vertexAttribPointer(program.attribs.a_color, 3, gl.FLOAT, false, 0, 0);
+  
+  gl.enableVertexAttribArray(program.attribs.a_normal);
+  gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.normals);
+  gl.vertexAttribPointer(program.attribs.a_normal, 3, gl.FLOAT, false, 0, 0);
   
   var matrix = mat4.create();
   mat4.lookAt(matrix, camera.position, camera.target, camera.up);
   
-  gl.enableVertexAttribArray(a_position);
-  gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.position);
-  gl.vertexAttribPointer(a_position, 3, gl.FLOAT, false, 0, 0);
-  
-  gl.enableVertexAttribArray(a_color);
-  gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.color);
-  gl.vertexAttribPointer(a_color, 3, gl.FLOAT, false, 0, 0);
-  
-  gl.enableVertexAttribArray(a_normal);
-  gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.normals);
-  gl.vertexAttribPointer(a_normal, 3, gl.FLOAT, false, 0, 0);
-  
-  gl.uniformMatrix4fv(u_perspective, false, camera.perspective);
-  gl.uniformMatrix4fv(u_matrix, false, matrix);
+  gl.uniformMatrix4fv(program.uniforms.u_perspective, false, camera.perspective);
+  gl.uniformMatrix4fv(program.uniforms.u_matrix, false, matrix);
   
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, scene.terrain.buffers.index);
-  
   gl.drawElements(gl.TRIANGLES, scene.terrain.index.length, gl.UNSIGNED_SHORT, 0);
   // gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
   
@@ -199,7 +212,7 @@ var imageLoaded = function(e) {
       var nU = getPixel(u, v - offset)[0] / 255;
       var nD = getPixel(u, v + offset)[0] / 255;
       var n = vec3.fromValues(nL - nR, .5, nD - nU);
-      n = vec3.normalize(n, n);
+      // n = vec3.normalize(n, n);
       normals[i] = n[0];
       normals[i+1] = n[1];
       normals[i+2] = n[2];
