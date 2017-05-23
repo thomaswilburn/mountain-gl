@@ -5,13 +5,14 @@ var gl = canvas.getContext("webgl");
 
 gl.enable(gl.DEPTH_TEST);
 // gl.enable(gl.CULL_FACE);
-gl.clearColor(0, .5, 1, 1);
+// gl.clearColor(0, .5, 1, 1);
 gl.clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT);
 
 var vertex = gl.createShader(gl.VERTEX_SHADER);
 gl.shaderSource(vertex, `
 attribute vec3 a_position;
 attribute vec3 a_color;
+attribute vec3 a_normal;
 
 uniform mat4 u_perspective;
 uniform mat4 u_matrix;
@@ -19,6 +20,7 @@ uniform mat4 u_matrix;
 varying vec4 v_screenspace;
 varying vec3 v_position;
 varying vec3 v_color;
+varying vec3 v_normal;
 
 void main() {
   v_position = a_position;
@@ -33,13 +35,16 @@ var fragment = gl.createShader(gl.FRAGMENT_SHADER);
 gl.shaderSource(fragment, `
 precision mediump float;
 
+uniform vec3 u_light;
+
 varying vec4 v_screenspace;
 varying vec3 v_position;
 varying vec3 v_color;
 
 void main() {
-  vec3 shade = v_position.yyy / 2.0;
-  vec3 color = vec3(1.0, 1.0, v_color.r) * shade;
+  float shade = v_position.y / 2.0;
+  float fog = 1.4 - v_screenspace.z * 0.05;
+  vec3 color = v_color * shade * fog;
   gl_FragColor = vec4(color, 1.0);
 }
 `);
@@ -57,13 +62,17 @@ var scene = {
     verts: [],
     index: [],
     color: [],
-    buffers: {}
+    buffers: {
+      position: gl.createBuffer(),
+      index: gl.createBuffer(),
+      color: gl.createBuffer()
+    }
   }
 }
 
 var a_position = gl.getAttribLocation(program, "a_position");
-
 var a_color = gl.getAttribLocation(program, "a_color");
+var a_normal = gl.getAttribLocation(program, "a_normal");
 
 var camera = {
   position: [0, 0, 0],
@@ -77,6 +86,7 @@ mat4.perspective(camera.perspective, 45 * Math.PI / 180, canvas.width / canvas.h
 var u_perspective = gl.getUniformLocation(program, "u_perspective");
 
 var u_matrix = gl.getUniformLocation(program, "u_matrix");
+var u_light = gl.getUniformLocation(program, "u_light");
 
 var render = function(time) {
   time *= 0.001;
@@ -84,13 +94,27 @@ var render = function(time) {
   var distance = 10;
   
   camera.position = [
-    Math.sin(time) * distance,
-    5,
-    Math.cos(time) * distance
+    Math.sin(time * .2) * distance,
+    Math.sin(time * .1) * 1 + 3,
+    Math.cos(time * .2) * distance
+  ];
+  
+  camera.target = [
+    Math.sin(time) * 5,
+    Math.abs(Math.cos(time * .3) * 2),
+    Math.sin(time) * 5
+  ]
+  
+  var light = [
+    Math.sin(time * .1),
+    -1,
+    Math.sin(time * .1)
   ];
   
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  
+  gl.uniform3fv(u_light, light);
   
   var matrix = mat4.create();
   mat4.lookAt(matrix, camera.position, camera.target, camera.up);
@@ -114,19 +138,18 @@ var render = function(time) {
   requestAnimationFrame(render);
 };
 
-var noise = new Image();
-noise.src = "noise.png";
-noise.onload = function() {
+var imageLoaded = function(e) {
+  var image = e.target;
   var heightmap = document.createElement("canvas");
   var context = heightmap.getContext("2d");
-  heightmap.width = noise.width;
-  heightmap.height = noise.height;
-  context.drawImage(noise, 0, 0, noise.width, noise.height);
-  var imageData = context.getImageData(0, 0, noise.width, noise.height);
+  heightmap.width = image.width;
+  heightmap.height = image.height;
+  context.drawImage(image, 0, 0, image.width, image.height);
+  var imageData = context.getImageData(0, 0, image.width, image.height);
   var getPixel = function(x, y) {
-    x = Math.floor(x * (noise.width - 1));
-    y = Math.floor(y * (noise.height - 1));
-    var index = (y * noise.height + x) * 4;
+    x = Math.floor(x * (image.width - 1));
+    y = Math.floor(y * (image.height - 1));
+    var index = (y * image.height + x) * 4;
     return imageData.data.slice(index, index + 4);
   }
   
@@ -134,14 +157,15 @@ noise.onload = function() {
   // points along each axis
   var interval = 100;
   // size in scene units
-  var size = 10;
-  scene.terrain.verts = new Array(interval ** 2);
-  scene.terrain.color = new Array(interval ** 2);
+  var size = 20;
+  scene.terrain.verts = new Array(interval ** 2 * 3);
+  scene.terrain.color = new Array(interval ** 2 * 3);
+  scene.terrain.normals = new Array(interval ** 2 * 3);
   // polys along each axis
   var edges = interval - 1;
   // element index buffer
   scene.terrain.index = new Array((edges ** 2) * 6);
-  var { verts, index, color } = scene.terrain;
+  var { verts, index, color, normals } = scene.terrain;
   
   //generate points, color attribute
   for (x = 0; x < interval; x++) {
@@ -151,9 +175,9 @@ noise.onload = function() {
       var v = z / (interval - 1);
       var pixel = getPixel(u, v);
       var height = pixel[0] / 255 * 2;
-      color[i] = Math.random();
-      color[i+1] = Math.random();
-      color[i+2] = Math.random();
+      color[i] = x % 2;
+      color[i+1] = z % 2;
+      color[i+2] = 1;
       verts[i] = x / (interval - 1) * size - (size / 2);
       verts[i+1] = height;
       verts[i+2] = z / (interval - 1) * size - (size / 2);
@@ -174,17 +198,18 @@ noise.onload = function() {
     }
   }
   
-  scene.terrain.buffers.position = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.position);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
   
-  scene.terrain.buffers.color = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.color);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(color), gl.STATIC_DRAW);
   
-  scene.terrain.buffers.index = gl.createBuffer();
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, scene.terrain.buffers.index);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(index), gl.STATIC_DRAW);
   
   requestAnimationFrame(render);
 }
+
+var noise = new Image();
+noise.src = "noise.png";
+noise.onload = imageLoaded;
