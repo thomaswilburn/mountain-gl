@@ -5,7 +5,7 @@ var gl = canvas.getContext("webgl");
 
 gl.enable(gl.DEPTH_TEST);
 // gl.enable(gl.CULL_FACE);
-// gl.clearColor(0, .5, 1, 1);
+// gl.clearColor(1.0, .5, 0, 1);
 gl.clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT);
 
 var vertex = gl.createShader(gl.VERTEX_SHADER);
@@ -25,6 +25,7 @@ varying vec3 v_normal;
 void main() {
   v_position = a_position;
   v_color = a_color;
+  v_normal = a_normal;
   v_screenspace = u_perspective * u_matrix * vec4(a_position, 1.0);
   gl_Position = v_screenspace;
 }
@@ -40,11 +41,15 @@ uniform vec3 u_light;
 varying vec4 v_screenspace;
 varying vec3 v_position;
 varying vec3 v_color;
+varying vec3 v_normal;
 
 void main() {
-  float shade = v_position.y / 2.0;
+  float shade = v_position.y / 4.0;
   float fog = 1.4 - v_screenspace.z * 0.05;
-  vec3 color = v_color * shade * fog;
+  vec3 normal = normalize(v_normal);
+  vec3 light = normalize(u_light);
+  float lighting = max(dot(normal, light), 0.0);
+  vec3 color = v_color * shade * lighting * fog;
   gl_FragColor = vec4(color, 1.0);
 }
 `);
@@ -60,12 +65,14 @@ gl.useProgram(program);
 var scene = {
   terrain: {
     verts: [],
+    normals: [],
     index: [],
     color: [],
     buffers: {
       position: gl.createBuffer(),
       index: gl.createBuffer(),
-      color: gl.createBuffer()
+      color: gl.createBuffer(),
+      normals: gl.createBuffer()
     }
   }
 }
@@ -91,6 +98,9 @@ var u_light = gl.getUniformLocation(program, "u_light");
 var render = function(time) {
   time *= 0.001;
   
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  
   var distance = 10;
   
   camera.position = [
@@ -106,13 +116,11 @@ var render = function(time) {
   ]
   
   var light = [
-    Math.sin(time * .1),
-    -1,
-    Math.sin(time * .1)
+    1,
+    1,
+    0
   ];
   
-  gl.viewport(0, 0, canvas.width, canvas.height);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   
   gl.uniform3fv(u_light, light);
   
@@ -126,6 +134,10 @@ var render = function(time) {
   gl.enableVertexAttribArray(a_color);
   gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.color);
   gl.vertexAttribPointer(a_color, 3, gl.FLOAT, false, 0, 0);
+  
+  gl.enableVertexAttribArray(a_normal);
+  gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.normals);
+  gl.vertexAttribPointer(a_normal, 3, gl.FLOAT, false, 0, 0);
   
   gl.uniformMatrix4fv(u_perspective, false, camera.perspective);
   gl.uniformMatrix4fv(u_matrix, false, matrix);
@@ -147,6 +159,7 @@ var imageLoaded = function(e) {
   context.drawImage(image, 0, 0, image.width, image.height);
   var imageData = context.getImageData(0, 0, image.width, image.height);
   var getPixel = function(x, y) {
+    if (x > 1 || x < 0 || y > 1 || y < 0) return [255, 255, 255, 0];
     x = Math.floor(x * (image.width - 1));
     y = Math.floor(y * (image.height - 1));
     var index = (y * image.height + x) * 4;
@@ -157,7 +170,7 @@ var imageLoaded = function(e) {
   // points along each axis
   var interval = 100;
   // size in scene units
-  var size = 20;
+  var size = 16;
   scene.terrain.verts = new Array(interval ** 2 * 3);
   scene.terrain.color = new Array(interval ** 2 * 3);
   scene.terrain.normals = new Array(interval ** 2 * 3);
@@ -174,13 +187,26 @@ var imageLoaded = function(e) {
       var u = x / (interval - 1);
       var v = z / (interval - 1);
       var pixel = getPixel(u, v);
-      var height = pixel[0] / 255 * 2;
-      color[i] = x % 2;
-      color[i+1] = z % 2;
-      color[i+2] = 1;
+      //set the height at x/y
+      var height = pixel[0] / 255 * 4;
       verts[i] = x / (interval - 1) * size - (size / 2);
       verts[i+1] = height;
       verts[i+2] = z / (interval - 1) * size - (size / 2);
+      //approximate normal from neighboring pixels
+      var offset = 1 / (interval - 1);
+      var nL = getPixel(u - offset, v)[0] / 255;
+      var nR = getPixel(u + offset, v)[0] / 255;
+      var nU = getPixel(u, v - offset)[0] / 255;
+      var nD = getPixel(u, v + offset)[0] / 255;
+      var n = vec3.fromValues(nL - nR, .5, nD - nU);
+      n = vec3.normalize(n, n);
+      normals[i] = n[0];
+      normals[i+1] = n[1];
+      normals[i+2] = n[2];
+      //generate colors
+      color[i] = .5;
+      color[i+1] = .5;//z % 2;
+      color[i+2] = .5;
     }
   }
   
@@ -203,6 +229,9 @@ var imageLoaded = function(e) {
   
   gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.color);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(color), gl.STATIC_DRAW);
+  
+  gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.normals);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STATIC_DRAW);
   
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, scene.terrain.buffers.index);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(index), gl.STATIC_DRAW);
