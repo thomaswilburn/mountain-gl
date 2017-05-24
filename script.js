@@ -55,7 +55,7 @@ void main() {
   vec3 normal = normalize(v_normal);
   vec3 light = normalize(u_light);
   float lighting = max(dot(normal, light) * 2.0, 0.0);
-  vec3 color = v_color * shade * lighting * fog * (noise(v_screenspace.xy) * 0.2 + 0.8);
+  vec3 color = v_color * shade * lighting * fog * (noise(v_screenspace.xy) * 0.1 + 0.9);
   gl_FragColor = vec4(color, 1.0);
 }
 `);
