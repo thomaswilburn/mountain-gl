@@ -54,7 +54,7 @@ void main() {
   float fog = 1.4 - v_screenspace.z * 0.01;
   vec3 normal = normalize(v_normal);
   vec3 light = normalize(u_light);
-  float lighting = max(dot(normal, light), 0.0);
+  float lighting = max(dot(normal, light) * 2.0, 0.0);
   vec3 color = v_color * shade * lighting * fog * (noise(v_screenspace.xy) * 0.2 + 0.8);
   gl_FragColor = vec4(color, 1.0);
 }
@@ -130,9 +130,9 @@ var render = function(time) {
   ]
   
   var light = [
-    1,
-    1,
-    0
+    Math.sin(time),
+    .5,
+    Math.cos(time)
   ];
   
   gl.uniform3fv(program.uniforms.u_light, light);
