@@ -37,6 +37,8 @@ gl.shaderSource(fragment, `
 precision highp float;
 
 uniform vec3 u_light;
+uniform vec3 u_light_color;
+uniform float u_light_intensity;
 uniform float u_time;
 
 varying vec4 v_screenspace;
@@ -53,10 +55,11 @@ void main() {
   float shade = v_position.y / 4.0;
   float fog = 1.4 - v_screenspace.z * 0.01;
   vec3 normal = normalize(v_normal);
-  vec3 light = normalize(u_light);
-  float lighting = max(dot(normal, light) * 2.0, 0.0);
-  vec3 color = v_color * shade * lighting * fog * (noise(v_screenspace.xy) * 0.1 + 0.9);
-  gl_FragColor = vec4(color, 1.0);
+  vec3 lightDirection = normalize(u_light);
+  vec3 diffuse = u_light_color * max(dot(normal, lightDirection) * 2.0, 0.0);
+  vec3 color = v_color * shade * (noise(v_screenspace.xy) * 0.1 + 0.9);
+  vec3 pixel = clamp(color + diffuse * u_light_intensity, 0.0, 1.0) * fog;
+  gl_FragColor = vec4(pixel, 1.0);
 }
 `);
 gl.compileShader(fragment);
@@ -104,6 +107,8 @@ program.uniforms = {
   u_perspective: gl.getUniformLocation(program, "u_perspective"),
   u_matrix: gl.getUniformLocation(program, "u_matrix"),
   u_light: gl.getUniformLocation(program, "u_light"),
+  u_light_color: gl.getUniformLocation(program, "u_light_color"),
+  u_light_intensity: gl.getUniformLocation(program, "u_light_intensity"),
   u_time: gl.getUniformLocation(program, "u_time")
 };
 
@@ -129,13 +134,13 @@ var render = function(time) {
     Math.sin(time * .1) * 5
   ]
   
-  var light = [
-    Math.sin(time),
-    .5,
-    Math.cos(time)
-  ];
+  var light = [1, .5, 0];
+  var lightColor = [0, 1, 1];
+  var intensity = Math.sin(time) * .1 + .1;
   
   gl.uniform3fv(program.uniforms.u_light, light);
+  gl.uniform3fv(program.uniforms.u_light_color, lightColor);
+  gl.uniform1f(program.uniforms.u_light_intensity, intensity);
   gl.uniform1f(program.uniforms.u_time, time);
   
   gl.enableVertexAttribArray(program.attribs.a_position);
