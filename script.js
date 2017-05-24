@@ -56,7 +56,8 @@ void main() {
   float fog = 1.4 - v_screenspace.z * 0.01;
   vec3 normal = normalize(v_normal);
   vec3 lightDirection = normalize(u_light);
-  vec3 diffuse = u_light_color * max(dot(normal, lightDirection) * 2.0, 0.0);
+  float facing = max(dot(normal, lightDirection), 0.0);
+  vec3 diffuse = u_light_color * facing;
   vec3 color = v_color * shade * (noise(v_screenspace.xy) * 0.1 + 0.9);
   vec3 pixel = clamp(color + diffuse * u_light_intensity, 0.0, 1.0) * fog;
   gl_FragColor = vec4(pixel, 1.0);
@@ -135,8 +136,8 @@ var render = function(time) {
   ]
   
   var light = [1, .5, 0];
-  var lightColor = [0, 1, 1];
-  var intensity = Math.sin(time) * .1 + .1;
+  var lightColor = [1, .5, 0];
+  var intensity = Math.sin(time) * .2 + .2;
   
   gl.uniform3fv(program.uniforms.u_light, light);
   gl.uniform3fv(program.uniforms.u_light_color, lightColor);
@@ -223,7 +224,7 @@ var imageLoaded = function(e) {
       normals[i+2] = n[2];
       //generate colors
       color[i] = .5;
-      color[i+1] = .5;//z % 2;
+      color[i+1] = 1;//z % 2;
       color[i+2] = .5;
     }
   }
