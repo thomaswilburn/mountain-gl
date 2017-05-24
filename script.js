@@ -3,20 +3,44 @@ canvas.width = canvas.offsetWidth;
 canvas.height = canvas.offsetHeight;
 var gl = canvas.getContext("webgl");
 
+// depth-testing means we don't have to worry about rendering order, GL will track it for us.
 gl.enable(gl.DEPTH_TEST);
+// this removes (does not render) back-facing triangles
 gl.enable(gl.CULL_FACE);
 // gl.clearColor(1.0, .5, 0, 1);
 gl.clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT);
 
+/*
+
+GL rendering is done through a "program," consisting of two linked shaders.
+Shaders are written in a C-like language, with a main() function for each, and
+provide output by writing to global variables (like gl_Position or
+gl_FragColor). The vertex shader converts inputs (typically in world-space)
+into X/Y screen coordinates, and the fragment shader is then called to render
+each pixel in the resulting polygon.
+
+Shaders get input via two "types" of variable: uniforms, which are available
+to both the fragment and the vertex shader and represent values that stay
+constant across an entire rendering pass (like lighting or camera position),
+and attributes, which are per-vertex values. Fragment shaders do not have
+access to attributes, but they can receive data from the vertex shader via
+varyings, which blend between the per-vertex values.
+
+*/
+
 var vertex = gl.createShader(gl.VERTEX_SHADER);
 gl.shaderSource(vertex, `
+// each vertex has a position, a color, and a normal vector for lighting
 attribute vec3 a_position;
 attribute vec3 a_color;
 attribute vec3 a_normal;
 
+// the vertex shader uses these uniforms to convert world coords into screen coords
 uniform mat4 u_perspective;
-uniform mat4 u_matrix;
+uniform mat4 u_camera;
+uniform mat4 u_position;
 
+// pass-through varyings used to send values to the fragment shader
 varying vec4 v_screenspace;
 varying vec3 v_position;
 varying vec3 v_color;
@@ -26,7 +50,7 @@ void main() {
   v_position = a_position;
   v_color = a_color;
   v_normal = normalize(a_normal);
-  v_screenspace = u_perspective * u_matrix * vec4(a_position, 1.0);
+  v_screenspace = u_perspective * u_camera * u_position * vec4(a_position, 1.0);
   gl_Position = v_screenspace;
 }
 `);
@@ -64,8 +88,8 @@ void main() {
 }
 `);
 gl.compileShader(fragment);
-// console.log(gl.getShaderInfoLog(fragment));
 
+// create the program and link it with the two shaders
 var program = gl.createProgram();
 gl.attachShader(program, vertex);
 gl.attachShader(program, fragment);
@@ -73,8 +97,16 @@ gl.linkProgram(program);
 
 gl.useProgram(program);
 
+// Container variable to hold state related to the 3D scene
+// GL largely works via global state, which is a pain
 var scene = {
   terrain: {
+    position: {
+      x: 0,
+      y: 0,
+      z: 0,
+      r: 0
+    },
     verts: [],
     normals: [],
     index: [],
@@ -95,7 +127,7 @@ program.attribs = {
 }
 
 var camera = {
-  position: [0, 0, 0],
+  position: [10, 10, 10],
   target: [0, 0, 0],
   up: [0, 1, 0],
   perspective: mat4.create()
@@ -106,7 +138,8 @@ mat4.perspective(camera.perspective, 45 * Math.PI / 180, canvas.width / canvas.h
 
 program.uniforms = {
   u_perspective: gl.getUniformLocation(program, "u_perspective"),
-  u_matrix: gl.getUniformLocation(program, "u_matrix"),
+  u_camera: gl.getUniformLocation(program, "u_camera"),
+  u_position: gl.getUniformLocation(program, "u_position"),
   u_light: gl.getUniformLocation(program, "u_light"),
   u_light_color: gl.getUniformLocation(program, "u_light_color"),
   u_light_intensity: gl.getUniformLocation(program, "u_light_intensity"),
@@ -129,11 +162,11 @@ var render = function(time) {
     Math.cos(time * .2) * distance
   ];
   
-  camera.target = [
-    Math.sin(time * .1) * 5,
-    4,
-    Math.sin(time * .1) * 5
-  ]
+  // camera.target = [
+  //   Math.sin(time * .1) * 5,
+  //   4,
+  //   Math.sin(time * .1) * 5
+  // ]
   
   var light = [1, .5, 0];
   var lightColor = [1, .5, 0];
@@ -159,8 +192,14 @@ var render = function(time) {
   var matrix = mat4.create();
   mat4.lookAt(matrix, camera.position, camera.target, camera.up);
   
+  var translation = vec4.fromValues(scene.terrain.position.x, scene.terrain.position.y, scene.terrain.position.z, 1);
+  var position = mat4.create();
+  mat4.fromTranslation(position, translation);
+  mat4.rotateY(position, position, scene.terrain.position.r, [0, 0, 0]);
+  
+  gl.uniformMatrix4fv(program.uniforms.u_position, false, position);
   gl.uniformMatrix4fv(program.uniforms.u_perspective, false, camera.perspective);
-  gl.uniformMatrix4fv(program.uniforms.u_matrix, false, matrix);
+  gl.uniformMatrix4fv(program.uniforms.u_camera, false, matrix);
   
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, scene.terrain.buffers.index);
   gl.drawElements(gl.TRIANGLES, scene.terrain.index.length, gl.UNSIGNED_SHORT, 0);
