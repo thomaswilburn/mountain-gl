@@ -207,13 +207,15 @@ noise.onload = function(e) {
   heightmap.height = image.height;
   context.drawImage(image, 0, 0, image.width, image.height);
   var imageData = context.getImageData(0, 0, image.width, image.height);
+  
+  // image pixels are addressed in UV coordinates, ranging from 0,0 to 1,1
   var getPixel = function(x, y) {
     if (x > 1 || x < 0 || y > 1 || y < 0) return [255, 255, 255, 0];
     x = Math.floor(x * (image.width - 1));
     y = Math.floor(y * (image.height - 1));
     var index = (y * image.height + x) * 4;
     return imageData.data.slice(index, index + 4);
-  }
+  };
   
   // create the plane
   // points along each axis
@@ -229,30 +231,32 @@ noise.onload = function(e) {
   scene.terrain.index = new Array((edges ** 2) * 6);
   var { verts, index, color, normals } = scene.terrain;
   
-  //generate points, color attribute
+  //generate vertex data
   for (x = 0; x < interval; x++) {
     for (z = 0; z < interval; z++) {
       var i = ((x * interval + z) * 3);
       var u = x / (interval - 1);
       var v = z / (interval - 1);
       var pixel = getPixel(u, v);
+      
       //set the height at x/y
       var height = pixel[0] / 255 * 4;
       verts[i] = x / (interval - 1) * size - (size / 2);
       verts[i+1] = height;
       verts[i+2] = z / (interval - 1) * size - (size / 2);
-      //approximate normal from neighboring pixels
+      
+      //  approximate normal from neighboring pixels
       var offset = 1 / (interval - 1);
       var nL = getPixel(u - offset, v)[0] / 255;
       var nR = getPixel(u + offset, v)[0] / 255;
       var nU = getPixel(u, v - offset)[0] / 255;
       var nD = getPixel(u, v + offset)[0] / 255;
       var n = vec3.fromValues(nL - nR, .5, nD - nU);
-      // n = vec3.normalize(n, n);
       normals[i] = n[0];
       normals[i+1] = n[1];
       normals[i+2] = n[2];
-      //generate colors
+      
+      // generate colors
       color[i] = .5;
       color[i+1] = 1;//z % 2;
       color[i+2] = .5;
