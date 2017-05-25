@@ -120,21 +120,22 @@ var scene = {
   },
 }
 
+/*
+
+Just as we use the scene object to organize all the random buffers and arrays
+that go into a WebGL rendering, we also need a place to put the various input
+IDs for attributes and uniforms. Since these are particular to each GL
+program, it makes sense just to add them to the program object as an
+organizing principle. We might switch programs based on a different material
+model or something, so it helps to keep them associated with each other.
+
+*/
+
 program.attribs = {
   a_position: gl.getAttribLocation(program, "a_position"),
   a_color: gl.getAttribLocation(program, "a_color"),
   a_normal: gl.getAttribLocation(program, "a_normal")
 }
-
-var camera = {
-  position: [10, 10, 10],
-  target: [0, 0, 0],
-  up: [0, 1, 0],
-  perspective: mat4.create()
-};
-
-mat4.identity(camera.perspective);
-mat4.perspective(camera.perspective, 45 * Math.PI / 180, canvas.width / canvas.height, .1, 300);
 
 program.uniforms = {
   u_perspective: gl.getUniformLocation(program, "u_perspective"),
@@ -146,28 +147,109 @@ program.uniforms = {
   u_time: gl.getUniformLocation(program, "u_time")
 };
 
-var render = function(time) {
-  time *= 0.001;
+console.log(program.attribs, program.uniforms);
+
+/*
+
+Our camera for this project is untraditional: normally, we would give it a
+position and use a mathematical construct called a quaternion to give it a
+direction. But I'm bad at math and don't understand quaternions, so instead
+our camera just has a position and a target. We use our vector library to
+point the camera at the target instead of controlling it directly. This is
+great for our purposes (guided tours of a scene) but obviously would be really
+cumbersome for a more typical player-controlled camera.
+
+*/
+
+var camera = {
+  position: [10, 10, 10],
+  target: [0, 0, 0],
+  up: [0, 1, 0],
+  perspective: mat4.create()
+};
+
+mat4.identity(camera.perspective);
+mat4.perspective(camera.perspective, 45 * Math.PI / 180, canvas.width / canvas.height, .1, 300);
+
+/*
+
+GL is a state machine, which means that the API is not object-oriented the way
+we would probably like it to be. So when we draw an array of triangles, we
+need to tell the GPU what we're going to render by binding each model's
+buffers (vertex positions, colors, and normals) to one of the attribute IDs
+that we received earlier. We also set up a new matrix for this particular
+scene entity that will move it around and rotate it, which lets multiple
+models share geometry but be rendered in different places easily.
+
+TODO: standardize model object layout so that it can only take one argument
+
+*/
+var drawElements = function(buffers, position, length) {
+  // model-space vertex coordinates
+  gl.enableVertexAttribArray(program.attribs.a_position);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
+  gl.vertexAttribPointer(program.attribs.a_position, 3, gl.FLOAT, false, 0, 0);
   
+  // per-vertex color values
+  gl.enableVertexAttribArray(program.attribs.a_color);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
+  gl.vertexAttribPointer(program.attribs.a_color, 3, gl.FLOAT, false, 0, 0);
+  
+  // per-vertex normals
+  gl.enableVertexAttribArray(program.attribs.a_normal);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normals);
+  gl.vertexAttribPointer(program.attribs.a_normal, 3, gl.FLOAT, false, 0, 0);
+  
+  // generate a matrix to will move model vertexes around world space
+  // this lets us generate model vertex values once, but easily reposition them
+  var translation = vec4.fromValues(position.x, position.y, position.z, 1);
+  var toWorld = mat4.create();
+  mat4.fromTranslation(toWorld, translation);
+  mat4.rotateY(toWorld, toWorld, position.r, [0, 0, 0]);
+  gl.uniformMatrix4fv(program.uniforms.u_position, false, toWorld);
+  
+  // send the index buffer to the GPU to render it
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.index);
+  gl.drawElements(gl.TRIANGLES, length, gl.UNSIGNED_SHORT, 0);
+  // gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+};
+
+/*
+
+The actual render() function sets up the scene before calling drawElements()
+for each object in the scene. That means we clear the canvas, configure global
+lighting, and set up the view matrices for the camera. These things don't
+change between objects, so it's okay to do them once for all the rendered
+models.
+
+*/
+
+var render = function(time) {
+  // pass in a tick that can be used for time-based effects
+  time *= 0.001;
+  gl.uniform1f(program.uniforms.u_time, time);
+  
+  // clear the canvas, but also the depth buffer
   canvas.width = canvas.offsetWidth;
   canvas.height = canvas.offsetHeight;
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   
-  var distance = 10;
-  
+  // the camera pans in a circle around the scene origin
   camera.position = [
-    Math.sin(time * .2) * distance,
+    Math.sin(time * .2) * 10,
     10,
-    Math.cos(time * .2) * distance
+    Math.cos(time * .2) * 10
   ];
   
+  // we can move the target just to make sure that it works
   // camera.target = [
   //   Math.sin(time * .1) * 5,
   //   4,
   //   Math.sin(time * .1) * 5
   // ]
   
+  // Global diffuse lighting (the "sun" for this scene)
   var light = [1, .5, 0];
   var lightColor = [1, .5, 0];
   var intensity = Math.sin(time) * .2 + .2;
@@ -175,38 +257,42 @@ var render = function(time) {
   gl.uniform3fv(program.uniforms.u_light, light);
   gl.uniform3fv(program.uniforms.u_light_color, lightColor);
   gl.uniform1f(program.uniforms.u_light_intensity, intensity);
-  gl.uniform1f(program.uniforms.u_time, time);
   
-  gl.enableVertexAttribArray(program.attribs.a_position);
-  gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.position);
-  gl.vertexAttribPointer(program.attribs.a_position, 3, gl.FLOAT, false, 0, 0);
+  // aim the camera at its target and generate a matrix to "move" the scene in front of the camera
+  var gaze = mat4.create();
+  mat4.lookAt(gaze, camera.position, camera.target, camera.up);
   
-  gl.enableVertexAttribArray(program.attribs.a_color);
-  gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.color);
-  gl.vertexAttribPointer(program.attribs.a_color, 3, gl.FLOAT, false, 0, 0);
-  
-  gl.enableVertexAttribArray(program.attribs.a_normal);
-  gl.bindBuffer(gl.ARRAY_BUFFER, scene.terrain.buffers.normals);
-  gl.vertexAttribPointer(program.attribs.a_normal, 3, gl.FLOAT, false, 0, 0);
-  
-  var matrix = mat4.create();
-  mat4.lookAt(matrix, camera.position, camera.target, camera.up);
-  
-  var translation = vec4.fromValues(scene.terrain.position.x, scene.terrain.position.y, scene.terrain.position.z, 1);
-  var position = mat4.create();
-  mat4.fromTranslation(position, translation);
-  mat4.rotateY(position, position, scene.terrain.position.r, [0, 0, 0]);
-  
-  gl.uniformMatrix4fv(program.uniforms.u_position, false, position);
+  // pass all camera matrices in for the vertex shader
+  // `perspective` scales content in 3D
+  // `gaze` moves the world in front of the camera
   gl.uniformMatrix4fv(program.uniforms.u_perspective, false, camera.perspective);
-  gl.uniformMatrix4fv(program.uniforms.u_camera, false, matrix);
+  gl.uniformMatrix4fv(program.uniforms.u_camera, false, gaze);
   
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, scene.terrain.buffers.index);
-  gl.drawElements(gl.TRIANGLES, scene.terrain.index.length, gl.UNSIGNED_SHORT, 0);
-  // gl.drawArrays(gl.TRIANGLES, 0, verts.length / 3);
+  // now render the landscape
+  drawElements(scene.terrain.buffers, scene.terrain.position, scene.terrain.index.length);
   
   requestAnimationFrame(render);
 };
+
+/*
+
+When the heightmap image is loaded, we need to turn it into the triangle
+positions for the terrain. The white pixels are used to create peaks, and the
+black pixels create valleys, with everything in between.
+
+Technically, we use an "element array" structure here, instead of a
+traditional list of triangles, because we want to share vertex positions for
+each grid point between all the triangles that touch that point (up to six, I
+think, depending on how we triangulate). So we construct the arrays without
+worrying about triangles, just points, and then the index array tells GL which
+points make up any given triangle.
+
+We'll also generate normals as a part of this process. The normal for a vertex
+is the direction of "away" from the surface at that location. We'll use it in
+the shader for lighting: if the surface faces lighting, it gets an added
+highlight. If it faces away, light doesn't hit it.
+
+*/
 
 var imageLoaded = function(e) {
   var image = e.target;
