@@ -1,3 +1,6 @@
+// some control constants
+const HEIGHTMAP_SCALE = 3.0;
+
 var canvas = document.querySelector("canvas");
 canvas.width = canvas.offsetWidth;
 canvas.height = canvas.offsetHeight;
@@ -76,7 +79,7 @@ float noise(vec2 seed) {
 }
 
 void main() {
-  float shade = v_position.y / 4.0;
+  float shade = v_position.y / ${HEIGHTMAP_SCALE.toFixed(1)};
   float fog = 1.4 - v_screenspace.z * 0.01;
   vec3 normal = normalize(v_normal);
   vec3 lightDirection = normalize(u_light);
@@ -197,9 +200,9 @@ this script.
 
 */
 
-var noise = new Image();
-noise.src = "noise.png";
-noise.onload = function(e) {
+var bitmap = new Image();
+bitmap.src = "cropped.jpg";
+bitmap.onload = function(e) {
   var image = e.target;
   var heightmap = document.createElement("canvas");
   var context = heightmap.getContext("2d");
@@ -240,7 +243,7 @@ noise.onload = function(e) {
       var pixel = getPixel(u, v);
       
       //set the height at x/y
-      var height = pixel[0] / 255 * 4;
+      var height = pixel[0] / 255 * HEIGHTMAP_SCALE;
       verts[i] = x / (interval - 1) * size - (size / 2);
       verts[i+1] = height;
       verts[i+2] = z / (interval - 1) * size - (size / 2);
@@ -315,9 +318,9 @@ var render = function(time) {
   
   // the camera pans in a circle around the scene origin
   camera.position = [
-    Math.sin(time * .2) * 10,
+    Math.sin(time * .2) * 16,
     10,
-    Math.cos(time * .2) * 10
+    Math.cos(time * .2) * 16
   ];
   
   // we can move the target just to make sure that it works
